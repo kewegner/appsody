@@ -122,20 +122,24 @@ generates a deployment manifest (yaml) file if one is not present, and uses it t
 
 			Info.log("Found existing deployment manifest ", configFile)
 			//Retrieve the project name and lowercase it
+			var deployImage string
+			var appsodyApplication AppsodyApplication
+			var appErr error
+			if !dryrun {
 
-			appsodyApplication, err := getAppsodyApplication(configFile)
-			if err != nil {
-				return err
+				appsodyApplication, appErr = getAppsodyApplication(configFile)
+				if appErr != nil {
+					return appErr
+				}
+				var applicationImage = appsodyApplication.Spec.ApplicationImage
+				Debug.log("Application Image:  ", applicationImage)
+
+				deployImage = config.tag
+				if deployImage == "" {
+					deployImage = applicationImage
+					// deployImage = "dev.local/" + projectName
+				}
 			}
-			var applicationImage = appsodyApplication.Spec.ApplicationImage
-			Debug.log("Application Image:  ", applicationImage)
-
-			deployImage := config.tag
-			if deployImage == "" {
-				deployImage = applicationImage
-				// deployImage = "dev.local/" + projectName
-			}
-
 			// Extract code and build the image - and tags it if -t is specified
 			buildConfig := &buildCommandConfig{RootCommandConfig: config.RootCommandConfig}
 			buildConfig.tag = deployImage
@@ -190,20 +194,20 @@ generates a deployment manifest (yaml) file if one is not present, and uses it t
 			}
 
 			//yamlFile.Close() // need to think about defer
+			if !dryrun {
+				targetConfigFile := configFile
+				file, err := os.Create(targetConfigFile)
+				if err != nil {
+					return err
+				}
 
-			targetConfigFile := configFile
-			file, err := os.Create(targetConfigFile)
-			if err != nil {
-				return err
+				defer file.Close()
+				w := bufio.NewWriter(file)
+				for _, line := range txtlines {
+					fmt.Fprintln(w, line)
+				}
+				w.Flush()
 			}
-
-			defer file.Close()
-			w := bufio.NewWriter(file)
-			for _, line := range txtlines {
-				fmt.Fprintln(w, line)
-			}
-			w.Flush()
-
 			if config.push {
 				err = DockerPush(deployImage, dryrun)
 				if err != nil {
@@ -215,8 +219,9 @@ generates a deployment manifest (yaml) file if one is not present, and uses it t
 			if err != nil {
 				return errors.Errorf("Failed to deploy to your Kubernetes cluster: %v", err)
 			}
-			Info.log("Deployment succeeded.")
-
+			if !dryrun {
+				Info.log("Deployment succeeded.")
+			}
 			// Ensure hostname and IP config is set up for deployment
 			time.Sleep(1 * time.Second)
 			Info.log("Appsody Deployment name is: ", appsodyApplication.Metadata.Name)
