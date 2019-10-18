@@ -28,6 +28,8 @@ type buildCommandConfig struct {
 	*RootCommandConfig
 	tag                string
 	dockerBuildOptions string
+	pushURL            string
+	push               bool
 }
 
 func checkDockerBuildOptions(options []string) error {
@@ -59,6 +61,8 @@ func newBuildCmd(rootConfig *RootCommandConfig) *cobra.Command {
 
 	buildCmd.PersistentFlags().StringVarP(&config.tag, "tag", "t", "", "Docker image name and optionally a tag in the 'name:tag' format")
 	buildCmd.PersistentFlags().StringVar(&config.dockerBuildOptions, "docker-options", "", "Specify the docker build options to use.  The value must be enlosed in \"\". The following docker options are not allowed: '--help','-t','--tag','-f','--file'.")
+	buildCmd.PersistentFlags().BoolVar(&config.push, "push", false, "Push the Docker image to the image repository.")
+	buildCmd.PersistentFlags().StringVar(&config.pushURL, "push-url", "", "The registry URL for the image repository.")
 	buildCmd.AddCommand(newBuildDeleteCmd(config))
 	buildCmd.AddCommand(newSetupCmd(config))
 	return buildCmd
@@ -117,6 +121,17 @@ func build(config *buildCommandConfig) error {
 
 	if execError != nil {
 		return execError
+	}
+	if config.push {
+		fullImage := buildImage
+		if config.pushURL != "" {
+			fullImage = config.pushURL + "/" + buildImage
+		}
+
+		err := DockerPush(fullImage, config.Dryrun)
+		if err != nil {
+			return errors.Errorf("Could not push the docker image - exiting. Error: %v", err)
+		}
 	}
 	if !config.Dryrun {
 		Info.log("Built docker image ", buildImage)
